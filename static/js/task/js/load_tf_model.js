@@ -1,4 +1,4 @@
-import * as tf from '@tensorflow/tfjs-core';
+import * as tf2 from '@tensorflow/tfjs-core';
 
 import * as Overcooked from "overcooked"
 let OvercookedGame = Overcooked.OvercookedGame.OvercookedGame;
@@ -10,9 +10,19 @@ let [STAY, INTERACT] = [Direction.STAY, Action.INTERACT];
 
 import {loadGraphModel} from '@tensorflow/tfjs-converter';
 
+
+// returns a Promise that resolves to the human prediction model
+export function getHumanPolicy() {
+    const modelPromise = tf.loadLayersModel('/static/assets/' + 'layers_model_testing' + '/model.json');
+
+    return modelPromise;
+}
+
 // Returns a Promise that resolves to a policy
 export default function getOvercookedPolicy(model_type, layout_name, playerIndex) {
     const modelPromise = loadGraphModel('/static/assets/' + model_type + '_' + layout_name + '_agent/model.json');
+
+    // const modelPromise = loadGraphModel('/static/assets/' + 'asym_testing_lta_2' + '/model.json');
 
     return modelPromise.then(function (model) {
 	return new Promise(function(resolve, reject) {
@@ -24,6 +34,12 @@ export default function getOvercookedPolicy(model_type, layout_name, playerIndex
 	    });
 	});
     });
+    // const modelPromise2 = tf.loadLayersModel('/static/assets/' + 'layers_model_testing' + '/model.json');
+
+    // return modelPromise2.then(function(model) {
+    //     debugger;
+    // });
+    
 }
 
 const BASE_FEATURE_INDICES = {
@@ -43,7 +59,7 @@ const VARIABLE_FEATURE_INDICES = {
     "onion": 19
 };
 
-function preprocessState(state, game, playerIndex) {
+export function preprocessState(state, game, playerIndex) {
     // All of our models have a batch size of 30, but we only want to predict on
     // a single state, so we put zeros everywhere else.
     let terrain = game.mdp.terrain_mtx;
@@ -96,7 +112,7 @@ function preprocessState(state, game, playerIndex) {
 	let obj = state.objects[i];
 	handle_object(obj);
     }
-    return tf.tensor(result, shape);
+    return tf2.tensor(result, shape);
 }
 
 function constant(element, shape) {

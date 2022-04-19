@@ -5,7 +5,7 @@ import PageBlockController from "./js/psiTurk-pageblock-controller.js"
 import Conditions from "./js/conditions.js"
 import GameServerIO from "./js/gameserver-io.js"
 import OvercookedSinglePlayerTask from "./js/overcooked-single";
-import getOvercookedPolicy from "./js/load_tf_model.js";
+import getOvercookedPolicy, {getHumanPolicy, preprocessState} from "./js/load_tf_model.js";
 
 import * as Overcooked from "overcooked"
 let OvercookedMDP = Overcooked.OvercookedMDP;
@@ -70,8 +70,10 @@ let layouts = {
         "XXXSX"
     ]
 };
-let main_trial_order =
-    ["cramped_room", "asymmetric_advantages", "coordination_ring", "random3", "random0"];
+// let main_trial_order =
+//     ["cramped_room", "asymmetric_advantages", "coordination_ring", "random3", "random0"];
+let main_trial_order = 
+       ["asymmetric_advantages"];
 
 $(document).ready(() => {
     /*
@@ -478,6 +480,13 @@ $(document).ready(() => {
                 'pagename': 'exp/pageblock.html',
                 'pagefunc': function () {
                     let layout_name = main_trial_order[round_num];
+            getHumanPolicy().then(function(human_model) {
+                // compile model for online training
+                human_model.compile({
+                    optimizer: 'adam',
+                    loss: 'meanSquaredError', // TODO: change when real model is loaded
+                    metrics: ['accuracy']
+                });
 		    getOvercookedPolicy(EXP.MODEL_TYPE, layout_name, AGENT_INDEX).then(function(npc_policy) {
                         $(".instructionsnav").hide();
 			let npc_policies = {};
@@ -497,6 +506,30 @@ $(document).ready(() => {
                                 }, 1500);
                             },
                             timestep_callback: (data) => {
+                                if (data.self.action_buffer.length >= 10) {
+                                    data.self.action_buffer.shift();
+                                }
+                                data.self.action_buffer.push(data.joint_action);
+
+                                if (data.self.state_buffer.length >= 10) {
+                                    data.self.state_buffer.shift();
+                                }
+                                data.self.state_buffer.push(data.state);
+
+                                // NOTE: if we run on every timestep, previous .fit has not completed
+                                if (data.cur_gameloop % 10 == 0) {
+                                    var pre_state = preprocessState(data.self.state_buffer[0], data.self.game, EXP.PLAYER_INDEX);
+
+                                    // TODO: with real model, use data from data.self.action_buffer
+                                    var labels = tf.zerosLike(data.self.human_model.predict(pre_state));
+
+                                    // TODO: properly deal with data in buffer (I think only one input from batch is used?)
+                                    data.self.human_model.fit(pre_state, labels, {
+                                        epochs: 1,
+                                        batchSize: 30
+                                    })
+                                }
+
                                 data.participant_id = participant_id;
                                 data.layout_name = layout_name;
                                 data.layout = layouts[layout_name];
@@ -508,7 +541,8 @@ $(document).ready(() => {
                                     worker_bonus += EXP.POINT_VALUE*data.reward;
                                 }
                             },
-                            DELIVERY_REWARD: EXP.DELIVERY_POINTS
+                            DELIVERY_REWARD: EXP.DELIVERY_POINTS,
+                            human_model: human_model
                         });
                         $("#pageblock").css("text-align", "center");
                         window.exit_hit = () => {
@@ -525,6 +559,7 @@ $(document).ready(() => {
                             });
                         }
                         game.init();
+                    });
                     });
                 }
             }
@@ -723,8 +758,10 @@ $(document).ready(() => {
             "exp/complete.html"
         ]
 
-        let exp_pages =
-            _.flattenDeep([pre_task_pages, task_pages, post_task_pages])
+        // let exp_pages =
+        //     _.flattenDeep([pre_task_pages, task_pages, post_task_pages])
+        let exp_pages = 
+               _.flattenDeep([task_pages])
         instructions = new PageBlockController(
             psiTurk, //parent
             exp_pages, //pages

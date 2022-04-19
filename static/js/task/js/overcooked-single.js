@@ -23,7 +23,8 @@ export default class OvercookedSinglePlayerTask{
         always_serve='onion',
         completion_callback = () => {console.log("Time up")},
         timestep_callback = (data) => {},
-        DELIVERY_REWARD = 5
+        DELIVERY_REWARD = 5,
+        human_model = null
     }) {
         //NPC policies get called at every time step
         if (typeof(npc_policies) === 'undefined') {
@@ -76,6 +77,10 @@ export default class OvercookedSinglePlayerTask{
         this.score = 0;
         this.completion_callback = completion_callback;
         this.timestep_callback = timestep_callback;
+        this.human_model = human_model;
+        // for online data saving
+        this.action_buffer = [];
+        this.state_buffer = [];
     }
 
     init() {
@@ -107,6 +112,7 @@ export default class OvercookedSinglePlayerTask{
 
             //record data
             this.timestep_callback({
+                self: this, // NOTE: may not be the best way to do this
                 state: this.state,
                 joint_action: this.joint_action,
                 next_state: next_state,
