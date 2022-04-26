@@ -5,7 +5,7 @@ import PageBlockController from "./js/psiTurk-pageblock-controller.js"
 import Conditions from "./js/conditions.js"
 import GameServerIO from "./js/gameserver-io.js"
 import OvercookedSinglePlayerTask from "./js/overcooked-single";
-import getOvercookedPolicy, {getHumanPolicy, preprocessState} from "./js/load_tf_model.js";
+import getOvercookedPolicy, {getHumanModel, updateHumanModel, preprocessState} from "./js/load_tf_model.js";
 
 import * as Overcooked from "overcooked"
 let OvercookedMDP = Overcooked.OvercookedMDP;
@@ -73,7 +73,7 @@ let layouts = {
 // let main_trial_order =
 //     ["cramped_room", "asymmetric_advantages", "coordination_ring", "random3", "random0"];
 let main_trial_order = 
-       ["asymmetric_advantages"];
+       ["cramped_room"];
 
 $(document).ready(() => {
     /*
@@ -480,12 +480,14 @@ $(document).ready(() => {
                 'pagename': 'exp/pageblock.html',
                 'pagefunc': function () {
                     let layout_name = main_trial_order[round_num];
-            getHumanPolicy().then(function(human_model) {
+            getHumanModel().then(function(human_model) {
+                // NOTE: for freezing layers we can use data.self.human_model.getLayer(null, 0).trainable before
+                // compiling (the indices for getLayer change per layer)
                 // compile model for online training
                 human_model.compile({
                     optimizer: 'adam',
-                    loss: 'meanSquaredError', // TODO: change when real model is loaded
-                    metrics: ['accuracy']
+                    loss: tf.losses.softmaxCrossEntropy,
+                    metrics: [tf.metrics.categoricalAccuracy]
                 });
 		    getOvercookedPolicy(EXP.MODEL_TYPE, layout_name, AGENT_INDEX).then(function(npc_policy) {
                         $(".instructionsnav").hide();
@@ -506,28 +508,54 @@ $(document).ready(() => {
                                 }, 1500);
                             },
                             timestep_callback: (data) => {
-                                if (data.self.action_buffer.length >= 10) {
+
+                                // TODO: make these constants
+                                var buffer_size = 10;
+                                var n_timesteps = 5;
+
+                                if (data.self.action_buffer.length >= buffer_size) {
                                     data.self.action_buffer.shift();
                                 }
-                                data.self.action_buffer.push(data.joint_action);
+                                var action_idx = Action.ACTION_TO_INDEX[data.joint_action[EXP.PLAYER_INDEX]];
+                                var action_onehot = [0, 0, 0, 0, 0, 0];
+                                action_onehot[action_idx] = 1;
+                                // var action_tensor = tf.tensor(action_onehot, [1, 6]);
+                                data.self.action_buffer.push(action_onehot);
 
-                                if (data.self.state_buffer.length >= 10) {
+                                if (data.self.state_buffer.length >= buffer_size) {
                                     data.self.state_buffer.shift();
                                 }
-                                data.self.state_buffer.push(data.state);
+                                var state_push = preprocessState(data.state, data.self.game, EXP.PLAYER_INDEX).arraySync()[0];
+                                data.self.state_buffer.push(state_push);
+
+                                // saving full dataset (TODO: remove after testing)
+                                // data.self.all_actions.push(action_onehot);
+                                // data.self.all_states.push(state_push);
 
                                 // NOTE: if we run on every timestep, previous .fit has not completed
-                                if (data.cur_gameloop % 10 == 0) {
-                                    var pre_state = preprocessState(data.self.state_buffer[0], data.self.game, EXP.PLAYER_INDEX);
+                                if ((data.cur_gameloop % n_timesteps == 0) && (data.cur_gameloop >= buffer_size)) {
 
-                                    // TODO: with real model, use data from data.self.action_buffer
-                                    var labels = tf.zerosLike(data.self.human_model.predict(pre_state));
+                                    var height = data.self.game.mdp.terrain_mtx[0].length;
+                                    var width = data.self.game.mdp.terrain_mtx.length;
+                                    var states_tensor = tf.tensor(data.self.state_buffer, [buffer_size, height, width, 20]);
 
-                                    // TODO: properly deal with data in buffer (I think only one input from batch is used?)
-                                    data.self.human_model.fit(pre_state, labels, {
-                                        epochs: 1,
-                                        batchSize: 30
-                                    })
+                                    // labels are from data.self.action_buffer
+                                    var actions_tensor = tf.tensor(data.self.action_buffer, [buffer_size, 6])
+
+                                    updateHumanModel(data.self.human_model, states_tensor, actions_tensor, data.self.human_optimizer);
+
+                                    // data.self.human_model.fit(states_tensor, actions_tensor, {
+                                    //     epochs: 1,
+                                    //     batchSize: buffer_size
+                                    // }).then((results) => {
+                                    //     // testing accuracy of learned model (TODO: remove after testing)
+                                    //     // var n = data.self.all_states.length;
+                                    //     // var all_states = tf.tensor(data.self.all_states, [n, height, width, 20]);
+                                    //     // var all_actions = tf.tensor(data.self.all_actions, [n, 6]);
+
+                                    //     // const result = data.self.human_model.evaluate(all_states, all_actions, {});
+                                    //     // console.log(result[1].arraySync());
+                                    // })
                                 }
 
                                 data.participant_id = participant_id;

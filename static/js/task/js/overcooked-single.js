@@ -81,6 +81,15 @@ export default class OvercookedSinglePlayerTask{
         // for online data saving
         this.action_buffer = [];
         this.state_buffer = [];
+        this.all_actions = [];
+        this.all_states = [];
+
+        // for manual human model optimizer
+        var lr = 1e-3;
+        var beta1 = 0.9;
+        var beta2 = 0.999;
+        var epsilon = 1e-7;
+        this.human_optimizer = tf.train.adam(lr, beta1, beta2, epsilon);
     }
 
     init() {

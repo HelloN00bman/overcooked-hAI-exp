@@ -12,10 +12,21 @@ import {loadGraphModel} from '@tensorflow/tfjs-converter';
 
 
 // returns a Promise that resolves to the human prediction model
-export function getHumanPolicy() {
-    const modelPromise = tf.loadLayersModel('/static/assets/' + 'layers_model_testing' + '/model.json');
+export function getHumanModel() {
+    // const modelPromise = tf.loadLayersModel('/static/assets/' + 'layers_model_testing' + '/model.json');
+    const modelPromise = tf.loadLayersModel('/static/assets/' + 'simple_testing_lta_10' + '/model.json');
 
     return modelPromise;
+}
+
+export function updateHumanModel(model, states_tensor, actions_tensor, optimizer) {
+    // console.log(model.predict(states_tensor).arraySync());
+    // console.log(tf.losses.softmaxCrossEntropy(actions_tensor, model.predict(states_tensor)).arraySync());
+
+    optimizer.minimize(() => tf.losses.softmaxCrossEntropy(actions_tensor, model.predict(states_tensor)))
+
+    // console.log(model.predict(states_tensor).arraySync());
+    // console.log(tf.losses.softmaxCrossEntropy(actions_tensor, model.predict(states_tensor)).arraySync());
 }
 
 // Returns a Promise that resolves to a policy
@@ -34,12 +45,6 @@ export default function getOvercookedPolicy(model_type, layout_name, playerIndex
 	    });
 	});
     });
-    // const modelPromise2 = tf.loadLayersModel('/static/assets/' + 'layers_model_testing' + '/model.json');
-
-    // return modelPromise2.then(function(model) {
-    //     debugger;
-    // });
-    
 }
 
 const BASE_FEATURE_INDICES = {
